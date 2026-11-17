@@ -99,7 +99,7 @@ async function home() {
   render(
     cards.length ? h("div.grid", cards) : h("section.card.empty",
       h("h2", "No subjects yet"),
-      h("p", "Pick the subjects you're studying and they'll be downloaded for offline use."),
+      h("p", "Add the subjects you're studying. They're stored on this device and work offline."),
       h("div.actions.center", h("a.btn.primary", { href: "#/subjects" }, "Add subjects"))),
     cards.length > 0 && h("div.actions.center", h("a.btn", { href: "#/subjects" }, "Add or update subjects")),
   );
@@ -164,40 +164,61 @@ async function subjects() {
   const listed = new Set((catalog ?? []).map((e) => e.code));
   const extra = [...installed.values()].filter((p) => !listed.has(p.code));
 
-  const srcInput = h("input", { value: src, placeholder: DEFAULT_SOURCE });
+  // importing zip files by hand: the main way in when the app is hosted without packs (e.g. GitHub Pages)
+  const importStatus = h("div.muted.small");
+  const importFill = h("div.fill", { style: { width: "0" } });
+  const importBar = h("div.bar", { hidden: true }, importFill);
   const fileInput = h("input", {
-    type: "file", accept: ".zip", multiple: true, hidden: true,
+    type: "file", accept: ".zip,application/zip", multiple: true, hidden: true,
     onchange: async (e) => {
-      for (const f of e.target.files) {
+      if (installing) return toast(`Wait for ${installing} to finish`);
+      const files = [...e.target.files];
+      importBar.hidden = false;
+      for (const f of files) {
+        installing = f.name;
         try {
-          const r = await importPack(f, (p) => toast(`Importing ${f.name}… ${pct(p)}`, 60000));
-          toast(`Imported ${r.name}: ${r.count} questions`);
+          const r = await importPack(f, (ratio) => {
+            importStatus.textContent = `Importing ${f.name}… ${pct(ratio)}`;
+            importFill.style.width = pct(ratio);
+          });
+          toast(`${r.name}: ${r.count} questions ready`);
         } catch (err) {
-          toast(`Import failed: ${err.message}`, 6000);
+          toast(`${f.name}: ${err.message}`, 6000);
+        } finally {
+          installing = null;
         }
       }
       subjects();
     },
   });
+  const importButton = (label, primary) =>
+    h(primary ? "button.btn.primary" : "button.btn", { onclick: () => fileInput.click() }, label);
+
+  const srcInput = h("input", { value: src, placeholder: DEFAULT_SOURCE });
+  const customSource = src !== DEFAULT_SOURCE;
 
   render(
     h("h1", "Subjects"),
     error && h("section.card",
-      h("h3", "Couldn't load the subject list"),
-      h("p.muted", `${error.message}`),
-      h("p.muted", "Run the app with `nix run .#serve` on your laptop (it serves the packs too), point the pack source below at wherever you keep them, or import a .zip file.")),
+      h("h2", "Import your subject files"),
+      h("p", "This copy of the app doesn't include any papers. Each subject comes as a .zip file (like 9702.zip) built on your laptop. Copy those files to this device, then import them here. They're stored on this device and work offline."),
+      h("div.actions", importButton("Import .zip files", true), fileInput),
+      importBar, importStatus,
+      customSource && h("p.muted.small", `Couldn't load the subject list from ${src}: ${error.message}`)),
     catalog && !catalog.length && h("p.muted", "The catalog is empty. Build a subject with `nix run .#papers -- all <code>`."),
     catalog && h("div.grid", catalog.map((e) => cardFor(e, installed.get(e.code)))),
     extra.length > 0 && h("div.grid", { style: { marginTop: "16px" } }, extra.map((p) => cardFor(null, p))),
+    catalog && h("div", importBar, importStatus),
     h("details.card", { style: { marginTop: "16px" } },
-      h("summary", "Other ways to add subjects"),
-      h("label", "Pack source (folder or URL holding index.json)", srcInput),
+      h("summary", catalog ? "Other ways to add subjects" : "Advanced: download from a pack source"),
+      h("p.muted.small", "A pack source is a folder or HTTPS URL holding index.json and the .zip packs (on another site it must allow CORS). `nix run .#serve` provides one on your laptop."),
+      h("label", "Pack source", srcInput),
       h("div.actions",
         h("button.btn", { onclick: async () => {
           await db.setSetting("packSource", srcInput.value.trim() || DEFAULT_SOURCE);
           subjects();
         } }, "Save & reload"),
-        h("button.btn", { onclick: () => fileInput.click() }, "Import .zip file"), fileInput)),
+        catalog && [importButton("Import .zip file"), fileInput])),
   );
 }
 

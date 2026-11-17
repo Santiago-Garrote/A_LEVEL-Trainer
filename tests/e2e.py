@@ -15,11 +15,21 @@ try:
         pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.goto("http://localhost:8765/")
         pg.wait_for_selector("text=No subjects yet")
+        # hosted without packs (GitHub Pages): no catalog, so the page leads with zip import
+        pg.route("**/packs/index.json", lambda r: r.fulfill(status=404, body="not found"))
         pg.click("text=Add subjects")
-        pg.wait_for_selector("h1:has-text('Subjects')")
+        pg.wait_for_selector("text=Import your subject files")
+        pg.screenshot(path=f"{S}/0-hosted.png", full_page=True)
+        pg.set_input_files("input[type=file]", "data/packs/9709.zip")
+        pg.wait_for_selector("#toast:has-text('Mathematics: 2045 questions ready')", timeout=120000)
+        pg.unroute("**/packs/index.json")
+        errors.clear()  # the faked 404s above are expected
+        print("hosted import: ok")
+        # served by `nix run .#serve`: install from the catalog
+        pg.reload()
         pg.wait_for_selector("button:has-text('Install')")
         print("catalog:", pg.locator(".grid h2").all_inner_texts())
-        for name in ("Physics", "Mathematics"):
+        for name in ("Physics",):
             pg.click(f"section.card:has(h2:has-text('{name}')) button:has-text('Install')")
             pg.wait_for_selector(f"section.card:has(h2:has-text('{name}')) .tag:has-text('Installed')", timeout=120000)
         pg.screenshot(path=f"{S}/0-subjects.png", full_page=True)
