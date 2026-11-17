@@ -177,7 +177,7 @@ async function subjects() {
     error = err;
   }
   // only `nix run .#serve` on the laptop can convert links; static hosting has no /api
-  const convert = await fetch("api/status", { cache: "no-store" })
+  const convert = location.hostname.endsWith("github.io") ? null : await fetch("api/status", { cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null)).then((j) => j?.convert === true ? convertCard() : null).catch(() => null);
 
   const mb = (b) => `${(b / 1e6).toFixed(0)} MB`;
