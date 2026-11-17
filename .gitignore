@@ -1,0 +1,5 @@
+# Past papers are © UCLES: keep them local, never commit or publish them
+data/
+tests/out/
+__pycache__/
+result
