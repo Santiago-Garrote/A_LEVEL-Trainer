@@ -97,12 +97,69 @@ async function home() {
   }
 
   render(
-    cards.length ? h("div.grid", cards) : h("section.card.empty",
-      h("h2", "No subjects yet"),
-      h("p", "Add the subjects you're studying. They're stored on this device and work offline."),
-      h("div.actions.center", h("a.btn.primary", { href: "#/subjects" }, "Add subjects"))),
+    cards.length > 0 && h("div.grid", cards),
     cards.length > 0 && h("div.actions.center", h("a.btn", { href: "#/subjects" }, "Add or update subjects")),
+    guide(cards.length === 0),
   );
+}
+
+// ------------------------------------------------------------------ getting started guide
+
+// Chrome/Edge/Android offer an install prompt we can trigger from a button; iOS never does
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+});
+
+const runningAsApp = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+function installStep() {
+  if (runningAsApp()) return null;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return h("li",
+    h("strong", "Install the app. "),
+    ios ? "In Safari, tap the Share button, then Add to Home Screen."
+      : "Use your browser menu → Install app (or Add to Home screen).",
+    " It then opens like a normal app and works without internet.",
+    installPrompt && h("div.actions", h("button.btn.small", { onclick: async () => {
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+      installPrompt = null;
+      home();
+    } }, "Install now")));
+}
+
+function guide(start) {
+  const steps = h("ol.steps",
+    installStep(),
+    h("li",
+      h("strong", "Add your subjects. "),
+      "Each subject is a .zip file (like 9702.zip) from whoever set this up for you. Save it on this device, then go to ",
+      h("a", { href: "#/subjects" }, "Subjects"), " → Import .zip files (or install it from the list there, if one is shown). It takes a minute and is stored on this device only."),
+    h("li",
+      h("strong", "Practice. "),
+      "Tap Practice on a subject and choose papers, topics and years, or Start paper to sit a full timed past paper. ",
+      "Multiple choice is marked instantly. For written questions, work on paper, then open the mark scheme and give yourself the marks you earned."),
+    h("li",
+      h("strong", "Come back for reviews. "),
+      "Questions you get wrong return the next day; ones you get right come back later and later. When some are due, a Review button appears here. A few minutes a day works best."),
+    h("li",
+      h("strong", "Track progress. "),
+      h("a", { href: "#/progress" }, "Progress"), " shows your scores by paper and topic so you can see what to work on. ",
+      "It's saved on this device only. To move it to another device, use Settings → Export progress and Import progress."),
+    h("li",
+      h("strong", "Optional: AI marking. "),
+      "Create your own key at openrouter.ai/keys and paste it in ", h("a", { href: "#/settings" }, "Settings"),
+      ". Written answers (typed or a photo of your working) are then marked against the mark scheme, about 1¢ per question. Don't use someone else's key."));
+
+  if (start) {
+    return h("section.card",
+      h("h2", "Getting started"),
+      steps,
+      h("div.actions", h("a.btn.primary", { href: "#/subjects" }, "Add subjects")));
+  }
+  return h("details.card", { style: { marginTop: "16px" } }, h("summary", "How to use this app"), steps);
 }
 
 // ------------------------------------------------------------------ subjects (install / update / remove)

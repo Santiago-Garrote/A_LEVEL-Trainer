@@ -14,7 +14,8 @@ try:
         pg.on("console", lambda m: m.type in ("error", "warning") and errors.append(m.text))
         pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.goto("http://localhost:8765/")
-        pg.wait_for_selector("text=No subjects yet")
+        pg.wait_for_selector("text=Getting started")
+        pg.screenshot(path=f"{S}/0-start.png", full_page=True)
         # hosted without packs (GitHub Pages): no catalog, so the page leads with zip import
         pg.route("**/packs/index.json", lambda r: r.fulfill(status=404, body="not found"))
         pg.click("text=Add subjects")
