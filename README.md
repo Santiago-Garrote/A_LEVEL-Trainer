@@ -27,15 +27,20 @@ nix run .#papers -- fetch 9709 --years 2020-2024 --components 1,3
 nix run .#papers -- build 9709 [--only s23_qp_12] [--jobs 4]   # parallel, one process per core by default
 nix run .#papers -- pack 9709                              # also refreshes data/packs/index.json
 nix run .#papers -- catalog                                # rewrite index.json only
+nix run .#papers -- links <papacambridge url>...           # convert links: PDF, session or subject page
+nix run .#papers -- links --dry-run <url>                  # just list the papers found
 ```
 
 - Papers are downloaded from PapaCambridge into `data/raw/<code>/` and cached (re-running only fetches what's new).
 - Default components and syllabus topics per subject live in `pipeline/subjects.json`. Currently that's 9702 Physics and 9709 Mathematics. To add a subject, add an entry with its components and topic keywords. Topic tagging is keyword based; questions with no match show up as "Untagged".
+- `links` accepts PapaCambridge links: a paper PDF (converted with its mark scheme), a session page such as `.../as-and-a-level-physics-9702-2023-may-june`, or a subject page such as `.../as-and-a-level-chemistry-9701` (every session from 2018). A subject that isn't in `subjects.json` gets a basic entry in `data/subjects-local.json` (all components, no topic tags) so it works straight away; add it to `subjects.json` with topic keywords to tag it.
 - Question detection relies on the CAIE layout (bold question numbers in the left margin; landscape "Question / Answer / Marks" mark-scheme tables, 2018+). Watch the build output for papers reporting 0 questions or missing mark-scheme sections.
 
 ## Using it
 
 **Laptop:** `nix run .#serve`, open http://localhost:8000 and go to **Subjects**. It lists every pack in `data/packs/index.json` with Install / Update / Remove. A rebuilt pack shows up as *Update available*; updating keeps your progress. Chrome/Edge can install the app.
+
+**Converting from the app:** when the app is served by `nix run .#serve`, the Subjects page also has *Convert from PapaCambridge*: paste links and the laptop runs `papers.py links` in the background, showing the log; the subject then appears ready to install or update. This isn't available on static hosting like GitHub Pages: PapaCambridge doesn't allow browsers to download its PDFs from other sites, and conversion needs the Python pipeline.
 
 **Where packs come from:** the Subjects page reads `index.json` from the *pack source*, `packs/` next to the app by default (which `nix run .#serve` maps to `data/packs/`). You can point it at another folder or URL under *Other ways to add subjects* (a URL on another origin must send CORS headers), or import a `.zip` file directly.
 

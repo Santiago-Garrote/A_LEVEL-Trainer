@@ -27,6 +27,10 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 SUBJECTS = json.loads((Path(__file__).parent / "subjects.json").read_text())
+# subjects first seen through `links`, created automatically (no topic keywords yet)
+LOCAL_SUBJECTS = DATA / "subjects-local.json"
+if LOCAL_SUBJECTS.exists():
+    SUBJECTS = {**json.loads(LOCAL_SUBJECTS.read_text()), **SUBJECTS}
 BASE_URL = "https://pastpapers.papacambridge.com/directories/CAIE/CAIE-pastpapers/upload/"
 SESSIONS = {"m": "Feb/March", "s": "May/June", "w": "Oct/Nov"}
 DPI = 150
@@ -35,7 +39,7 @@ PAPER_RE = re.compile(r"^(\d{4})_([msw])(\d{2})_qp_(\d)(\d)$")
 
 def subject(code):
     if code not in SUBJECTS:
-        sys.exit(f"Unknown subject {code}. Add it to pipeline/subjects.json")
+        sys.exit(f"Unknown subject {code}. Add it to pipeline/subjects.json or convert a PapaCambridge link for it")
     return SUBJECTS[code]
 
 
@@ -76,8 +80,103 @@ def download(s, stem, out, delay):
     if r.status_code != 200 or not r.content.startswith(b"%PDF"):
         return False
     path.write_bytes(r.content)
-    print(f"  + {stem}")
+    print(f"  + {stem}", flush=True)
     return True
+
+
+# ---------------------------------------------------------------- PapaCambridge links
+
+PAPA_HOSTS = {"pastpapers.papacambridge.com", "papacambridge.com", "www.papacambridge.com"}
+STEM_RE = re.compile(r"(\d{4})_([msw])(\d{2})_(?:qp|ms)_(\d)(\d)\.pdf")
+SLUG_RE = re.compile(r"as-and-a-level-([a-z-]+?)-(\d{4})(?:-(\d{4}))?(?:-[a-z-]+)?/?$")
+SESSION_LINK_RE = re.compile(r'href="([^"]*?as-and-a-level-[a-z-]+-\d{4}-(\d{4})-[a-z-]+)"')
+MIN_YEAR = 2018  # the splitter is checked against the 2018+ layout
+
+
+def resolve_links(urls, delay=0.5, min_year=MIN_YEAR):
+    """Expand PapaCambridge links into question papers.
+
+    Accepts a PDF link (paper + its mark scheme), a session page (every paper on it) or a
+    subject page (every session page from min_year). Returns ({code: {stem}}, {code: name}).
+    """
+    s = requests.Session()
+    s.headers["User-Agent"] = "Mozilla/5.0 (A-Level Trainer personal study)"
+    found, names = {}, {}
+
+    def add(code, sess, yy, comp, var):
+        found.setdefault(code, set()).add(f"{code}_{sess}{yy}_qp_{comp}{var}")
+
+    def page(url):
+        r = s.get(url, timeout=60)
+        time.sleep(delay)
+        r.raise_for_status()
+        return r.text
+
+    for url in urls:
+        url = url.strip()
+        host = requests.utils.urlparse(url).hostname or ""
+        if host not in PAPA_HOSTS:
+            raise ValueError(f"not a PapaCambridge link: {url}")
+        if m := STEM_RE.search(url):  # direct PDF, also inside download_file.php?files=...
+            add(*m.groups())
+            continue
+        slug = SLUG_RE.search(requests.utils.urlparse(url).path)
+        if not slug:
+            raise ValueError(f"don't know this kind of PapaCambridge page: {url}")
+        name, code, year = slug.group(1).replace("-", " ").title(), slug.group(2), slug.group(3)
+        names[code] = name
+        if year:  # session page
+            pages = [url]
+        else:  # subject page: follow its session pages
+            pages = sorted({requests.compat.urljoin("https://pastpapers.papacambridge.com/",
+                                                    "papers/caie/" + href.rsplit("papers/caie/", 1)[-1])
+                            for href, y in SESSION_LINK_RE.findall(page(url)) if int(y) >= min_year})
+            print(f"  {name} ({code}): {len(pages)} session pages from {min_year}", flush=True)
+        for pu in pages:
+            for m in STEM_RE.finditer(page(pu)):
+                if m.group(1) == code and 2000 + int(m.group(3)) >= min_year:
+                    add(*m.groups())
+    return found, names
+
+
+def ensure_subject(code, name, comps):
+    """Known subjects keep their config; new ones get a basic entry in data/subjects-local.json."""
+    if code in SUBJECTS:
+        return SUBJECTS[code]
+    local = json.loads(LOCAL_SUBJECTS.read_text()) if LOCAL_SUBJECTS.exists() else {}
+    entry = {"name": name or code, "components": {str(c): f"Paper {c}" for c in sorted(comps)}, "topics": []}
+    local[code] = SUBJECTS[code] = entry
+    LOCAL_SUBJECTS.parent.mkdir(parents=True, exist_ok=True)
+    LOCAL_SUBJECTS.write_text(json.dumps(local, indent=1))
+    print(f"  new subject {code} {entry['name']}: components {', '.join(entry['components'])} (no topic tags yet)", flush=True)
+    return entry
+
+
+def from_links(urls, delay=0.5, jobs=None, dry_run=False):
+    """Download, build and pack the papers behind PapaCambridge links."""
+    found, names = resolve_links(urls, delay)
+    if not found:
+        sys.exit("No question papers found behind those links")
+    for code, stems in sorted(found.items()):
+        comps = {int(PAPER_RE.match(st).group(4)) for st in stems}
+        meta = SUBJECTS.get(code) or {"components": {str(c): "" for c in comps}}
+        wanted = sorted(st for st in stems if PAPER_RE.match(st).group(4) in meta["components"])
+        skipped = len(stems) - len(wanted)
+        print(f"{code}: {len(wanted)} question papers" + (f" ({skipped} skipped: components not configured)" if skipped else ""), flush=True)
+        if dry_run:
+            print("  " + " ".join(wanted))
+            continue
+        ensure_subject(code, names.get(code), comps)
+        out = DATA / "raw" / code
+        out.mkdir(parents=True, exist_ok=True)
+        s = requests.Session()
+        s.headers["User-Agent"] = "Mozilla/5.0 (A-Level Trainer personal study)"
+        ok = [st for st in wanted if download(s, st, out, delay) and download(s, st.replace("_qp_", "_ms_"), out, delay)]
+        if len(ok) < len(wanted):
+            print(f"  ! {len(wanted) - len(ok)} papers couldn't be downloaded", flush=True)
+        if ok:
+            build(code, ok, jobs)
+            pack(code)
 
 
 # ---------------------------------------------------------------- question papers
@@ -368,7 +467,8 @@ def build(code, only=None, jobs=None):
     papers = sorted(raw.glob(f"{code}_*_qp_*.pdf"))
     if only:
         # rebuild just the matching papers, keeping everything else already built
-        papers = [p for p in papers if only in p.stem]
+        only = [only] if isinstance(only, str) else only
+        papers = [p for p in papers if any(o in p.stem for o in only)]
         rebuilt = {p.stem.replace("_qp", "") for p in papers}
         kept = json.loads(index.read_text()) if index.exists() else []
         questions = [q for q in kept if q["paper"] not in rebuilt]
@@ -441,6 +541,11 @@ def main():
     p = sub.add_parser("pack", help="bundle built questions into data/packs/<code>.zip")
     p.add_argument("code")
     sub.add_parser("catalog", help="rewrite data/packs/index.json from the packs present")
+    lk = sub.add_parser("links", help="download + build + pack the papers behind PapaCambridge links")
+    lk.add_argument("urls", nargs="+", help="PDF, session page or subject page links")
+    lk.add_argument("--delay", type=float, default=0.5)
+    lk.add_argument("--jobs", type=int)
+    lk.add_argument("--dry-run", action="store_true", help="only list the papers found")
     a = sub.add_parser("all", help="fetch + build + pack")
     a.add_argument("code")
     a.add_argument("--years", default="2019-2024")
@@ -450,6 +555,8 @@ def main():
     args = ap.parse_args()
     if args.cmd == "catalog":
         return catalog()
+    if args.cmd == "links":
+        return from_links(args.urls, args.delay, args.jobs, args.dry_run)
 
     meta = subject(args.code)
     if args.cmd in ("fetch", "all"):

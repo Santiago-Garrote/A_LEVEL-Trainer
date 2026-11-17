@@ -29,6 +29,7 @@ try:
         pg.reload()
         pg.wait_for_selector("button:has-text('Install')")
         print("catalog:", pg.locator(".grid h2").all_inner_texts())
+        pg.wait_for_selector("text=Convert from PapaCambridge")  # laptop server offers link conversion
         for name in ("Physics",):
             pg.click(f"section.card:has(h2:has-text('{name}')) button:has-text('Install')")
             pg.wait_for_selector(f"section.card:has(h2:has-text('{name}')) .tag:has-text('Installed')", timeout=120000)

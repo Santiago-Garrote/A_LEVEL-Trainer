@@ -118,6 +118,9 @@ async function subjects() {
   } catch (err) {
     error = err;
   }
+  // only `nix run .#serve` on the laptop can convert links; static hosting has no /api
+  const convert = await fetch("api/status", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null)).then((j) => j?.convert === true ? convertCard() : null).catch(() => null);
 
   const mb = (b) => `${(b / 1e6).toFixed(0)} MB`;
   const cardFor = (entry, have) => {
@@ -209,6 +212,7 @@ async function subjects() {
     catalog && h("div.grid", catalog.map((e) => cardFor(e, installed.get(e.code)))),
     extra.length > 0 && h("div.grid", { style: { marginTop: "16px" } }, extra.map((p) => cardFor(null, p))),
     catalog && h("div", importBar, importStatus),
+    convert?.card,
     h("details.card", { style: { marginTop: "16px" } },
       h("summary", catalog ? "Other ways to add subjects" : "Advanced: download from a pack source"),
       h("p.muted.small", "A pack source is a folder or HTTPS URL holding index.json and the .zip packs (on another site it must allow CORS). `nix run .#serve` provides one on your laptop."),
@@ -220,6 +224,69 @@ async function subjects() {
         } }, "Save & reload"),
         catalog && [importButton("Import .zip file"), fileInput])),
   );
+  convert?.poll(true);
+}
+
+/** Paste PapaCambridge links; the laptop server downloads, splits and packs them. */
+function convertCard() {
+  const links = h("textarea", { rows: 3, placeholder: "https://pastpapers.papacambridge.com/papers/caie/as-and-a-level-physics-9702-2023-may-june" });
+  const log = h("pre.log", { hidden: true });
+  const status = h("div.muted.small");
+  const button = h("button.btn.primary", { onclick: async () => {
+    const list = links.value.split(/\s+/).filter(Boolean);
+    if (!list.length) return toast("Paste at least one link");
+    const res = await fetch("api/convert", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ links: list }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(j.error ?? `HTTP ${res.status}`, 6000);
+    links.value = "";
+    poll(false);
+  } }, "Convert");
+
+  let polling = false;
+  async function poll(initial) {
+    if (polling) return;
+    polling = true;
+    let seenRunning = false;
+    try {
+      while (log.isConnected) { // stops when the page is left or re-rendered
+        const j = await fetch("api/convert", { cache: "no-store" }).then((r) => r.json());
+        button.disabled = j.running;
+        if (j.running || !initial) {
+          log.hidden = !j.log.length;
+          log.textContent = j.log.slice(-40).join("\n");
+          log.scrollTop = log.scrollHeight;
+        }
+        if (j.running) {
+          seenRunning = true;
+          status.textContent = "Converting on your laptop… you can leave this page, it keeps going.";
+        } else {
+          if (seenRunning || !initial) {
+            if (j.exit === 0) {
+              toast("Conversion finished: install or update the subject above", 6000);
+              return subjects();
+            }
+            status.textContent = `Conversion failed (exit ${j.exit}), see the log above.`;
+          }
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } catch (err) {
+      status.textContent = `Lost contact with the laptop server: ${err.message}`;
+    } finally {
+      polling = false;
+    }
+  }
+
+  const card = h("section.card", { style: { marginTop: "16px" } },
+    h("h2", "Convert from PapaCambridge"),
+    h("p.muted", "Paste links, one per line: a paper PDF, a session page (like Physics May/June 2023) or a whole subject page (2018 onwards). Your laptop downloads the papers and their mark schemes and builds the pack, then it appears above to install."),
+    links,
+    h("div.actions", button),
+    log, status);
+  return { card, poll };
 }
 
 // ------------------------------------------------------------------ practice setup
