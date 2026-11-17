@@ -1,7 +1,7 @@
 import * as db from "./db.js";
 import * as srs from "./srs.js";
 import * as ai from "./ai.js";
-import { importPack, deletePack, install, fetchCatalog, source as packSource, DEFAULT_SOURCE } from "./packs.js";
+import { importPack, deletePack, install, findCatalog, sources as packSources } from "./packs.js";
 
 const main = document.getElementById("main");
 const SESSION_NAMES = { m: "Feb/Mar", s: "May/Jun", w: "Oct/Nov" };
@@ -135,8 +135,9 @@ function guide(start) {
     installStep(),
     h("li",
       h("strong", "Add your subjects. "),
-      "Each subject is a .zip file (like 9702.zip) from whoever set this up for you. Save it on this device, then go to ",
-      h("a", { href: "#/subjects" }, "Subjects"), " → Import .zip files (or install it from the list there, if one is shown). It takes a minute and is stored on this device only."),
+      "Go to ", h("a", { href: "#/subjects" }, "Subjects"), " and tap Install on the ones you're studying. ",
+      "Each is a one-off download of about 70 MB, so use Wi-Fi; after that it works offline. ",
+      "If someone gave you a subject file (.zip), use Other ways to add subjects → Import .zip file there instead."),
     h("li",
       h("strong", "Practice. "),
       "Tap Practice on a subject and choose papers, topics and years, or Start paper to sit a full timed past paper. ",
@@ -167,11 +168,11 @@ function guide(start) {
 let installing = null; // code of the pack being installed, one at a time
 
 async function subjects() {
-  const src = await packSource();
+  let src = (await packSources())[0];
   const installed = new Map((await packs()).map((p) => [p.code, p]));
   let catalog = null, error = null;
   try {
-    catalog = await fetchCatalog(src);
+    ({ src, subjects: catalog } = await findCatalog());
   } catch (err) {
     error = err;
   }
@@ -254,14 +255,14 @@ async function subjects() {
   const importButton = (label, primary) =>
     h(primary ? "button.btn.primary" : "button.btn", { onclick: () => fileInput.click() }, label);
 
-  const srcInput = h("input", { value: src, placeholder: DEFAULT_SOURCE });
-  const customSource = src !== DEFAULT_SOURCE;
+  const customSource = (await db.setting("packSource")) || "";
+  const srcInput = h("input", { value: customSource, placeholder: "Automatic" });
 
   render(
     h("h1", "Subjects"),
     error && h("section.card",
-      h("h2", "Import your subject files"),
-      h("p", "This copy of the app doesn't include any papers. Each subject comes as a .zip file (like 9702.zip) built on your laptop. Copy those files to this device, then import them here. They're stored on this device and work offline."),
+      h("h2", "Couldn't load the subject list"),
+      h("p", "Check your internet connection and reload this page to install subjects from the list. If someone gave you subject files (.zip, like 9702.zip), you can import them here instead. They're stored on this device and work offline."),
       h("div.actions", importButton("Import .zip files", true), fileInput),
       importBar, importStatus,
       customSource && h("p.muted.small", `Couldn't load the subject list from ${src}: ${error.message}`)),
@@ -272,11 +273,11 @@ async function subjects() {
     convert?.card,
     h("details.card", { style: { marginTop: "16px" } },
       h("summary", catalog ? "Other ways to add subjects" : "Advanced: download from a pack source"),
-      h("p.muted.small", "A pack source is a folder or HTTPS URL holding index.json and the .zip packs (on another site it must allow CORS). `nix run .#serve` provides one on your laptop."),
+      h("p.muted.small", "Leave the pack source empty to use the published subjects (or your laptop's, when the app runs with `nix run .#serve`). Otherwise give a folder or HTTPS URL holding index.json and the .zip packs; another site must allow CORS."),
       h("label", "Pack source", srcInput),
       h("div.actions",
         h("button.btn", { onclick: async () => {
-          await db.setSetting("packSource", srcInput.value.trim() || DEFAULT_SOURCE);
+          await db.setSetting("packSource", srcInput.value.trim()); // empty = automatic
           subjects();
         } }, "Save & reload"),
         catalog && [importButton("Import .zip file"), fileInput])),

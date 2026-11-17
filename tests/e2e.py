@@ -16,14 +16,14 @@ try:
         pg.goto("http://localhost:8765/")
         pg.wait_for_selector("text=Getting started")
         pg.screenshot(path=f"{S}/0-start.png", full_page=True)
-        # hosted without packs (GitHub Pages): no catalog, so the page leads with zip import
-        pg.route("**/packs/index.json", lambda r: r.fulfill(status=404, body="not found"))
-        pg.click("text=Add subjects")
-        pg.wait_for_selector("text=Import your subject files")
+        # no catalog reachable (offline, or both pack sources down): the page leads with zip import
+        pg.route("**/index.json", lambda r: r.fulfill(status=404, body="not found"))
+        pg.click("a.btn:has-text('Add subjects')")
+        pg.wait_for_selector("text=Couldn't load the subject list")
         pg.screenshot(path=f"{S}/0-hosted.png", full_page=True)
         pg.set_input_files("input[type=file]", "data/packs/9709.zip")
         pg.wait_for_selector("#toast:has-text('Mathematics: 2045 questions ready')", timeout=120000)
-        pg.unroute("**/packs/index.json")
+        pg.unroute("**/index.json")
         errors.clear()  # the faked 404s above are expected
         print("hosted import: ok")
         # served by `nix run .#serve`: install from the catalog

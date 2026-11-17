@@ -42,13 +42,11 @@ nix run .#papers -- links --dry-run <url>                  # just list the paper
 
 **Converting from the app:** when the app is served by `nix run .#serve`, the Subjects page also has *Convert from PapaCambridge*: paste links and the laptop runs `papers.py links` in the background, showing the log; the subject then appears ready to install or update. This isn't available on static hosting like GitHub Pages: PapaCambridge doesn't allow browsers to download its PDFs from other sites, and conversion needs the Python pipeline.
 
-**Where packs come from:** the Subjects page reads `index.json` from the *pack source*, `packs/` next to the app by default (which `nix run .#serve` maps to `data/packs/`). You can point it at another folder or URL under *Other ways to add subjects* (a URL on another origin must send CORS headers), or import a `.zip` file directly.
+**Where packs come from:** the Subjects page tries `packs/` next to the app first (which `nix run .#serve` maps to `data/packs/`), then the published packs at https://santiago-garrote.github.io/A_LEVEL-Packs/. On GitHub Pages it goes straight to the published ones. Under *Other ways to add subjects* you can set a different source (a URL on another site must send CORS headers) or import a `.zip` file directly.
 
-**Phone:** service workers (needed for offline/installable) require HTTPS, so:
+**Publishing packs:** `nix run .#publish` uploads the changed files in `data/packs/` (`index.json` + zips) as assets of the `packs` release in [A_LEVEL-Packs](https://github.com/Santiago-Garrote/A_LEVEL-Packs), removes packs you deleted locally, and redeploys that repo's Pages site. The packs live in release assets rather than git, so updates don't bloat history, and in a separate repo from the app.
 
-1. Host the `app/` folder on any static HTTPS host (GitHub Pages, Netlify drop, Cloudflare Pages). It contains **no papers**, only the app code.
-2. Get the packs onto the phone: either copy the zips over (USB, Drive, etc.) and use *Import .zip file*, or set the pack source to a **private** HTTPS location that holds `index.json` and the zips. An HTTPS app can't fetch from your laptop's plain `http://` server (browsers block mixed content). Packs are stored on the device only.
-3. Use *Add to Home Screen* to install it.
+**Phone / students:** open https://santiago-garrote.github.io/A_LEVEL-Trainer/, use *Add to Home Screen*, then **Subjects → Install**. It's about 70 MB per subject, then fully offline. A `.zip` can still be imported by hand.
 
 For a quick test without HTTPS: `nix run .#serve -- --bind 0.0.0.0` and open `http://<laptop-ip>:8000` on the phone (works online only; no offline install).
 
@@ -60,4 +58,4 @@ Settings → paste an OpenRouter key (openrouter.ai/keys) and pick a vision mode
 
 ## Copyright
 
-Past papers and mark schemes are © UCLES (Cambridge University Press & Assessment). This tool is for personal study: `data/` is git-ignored. Don't publish packs or commit papers.
+Past papers and mark schemes are © UCLES (Cambridge University Press & Assessment). This repo contains code only (`data/` is git-ignored). The published packs are a separate repo, offered free for non-commercial study, with a takedown contact in its README.

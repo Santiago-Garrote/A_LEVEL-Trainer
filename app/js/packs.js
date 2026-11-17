@@ -1,11 +1,28 @@
 import { unzipSync, strFromU8 } from "../vendor/fflate.js";
 import * as db from "./db.js";
 
-/** Where the Subjects page looks for index.json + packs. Relative = next to the app. */
-export const DEFAULT_SOURCE = "packs/";
+/** Where the Subjects page looks for index.json + packs, in order (unless Settings names one). */
+export const LOCAL_SOURCE = "packs/"; // `nix run .#serve` on the laptop maps this to data/packs
+export const PUBLISHED_SOURCE = "https://santiago-garrote.github.io/A_LEVEL-Packs/"; // `nix run .#publish`
 
-export async function source() {
-  return (await db.setting("packSource")) || DEFAULT_SOURCE;
+export async function sources() {
+  const custom = await db.setting("packSource");
+  if (custom) return [custom];
+  // the hosted app has no local packs folder, so don't ask for one
+  return location.hostname.endsWith("github.io") ? [PUBLISHED_SOURCE] : [LOCAL_SOURCE, PUBLISHED_SOURCE];
+}
+
+/** First source whose catalog loads: {src, subjects}. Throws the last error if none does. */
+export async function findCatalog() {
+  let last;
+  for (const src of await sources()) {
+    try {
+      return { src, subjects: await fetchCatalog(src) };
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last;
 }
 
 /** The catalog written by `papers.py pack` / `papers.py catalog`. */

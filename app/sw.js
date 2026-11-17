@@ -1,6 +1,6 @@
 // Offline cache for the app shell. Study data lives in IndexedDB, not here.
 // Bump VERSION whenever app files change so clients pick up the new shell.
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png",
   "js/app.js", "js/db.js", "js/packs.js", "js/srs.js", "js/ai.js", "vendor/fflate.js",
@@ -22,8 +22,9 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  // packs are big and land in IndexedDB; caching them here would store them twice
-  if (url.pathname.includes("/packs/")) return;
+  // packs are big and land in IndexedDB; caching them here would store them twice.
+  // (The published packs site is same-origin on github.io, so match it too.)
+  if (/\/packs\//i.test(url.pathname) || /\.zip$|\/index\.json$/.test(url.pathname)) return;
   if (url.pathname.includes("/api/")) return; // live job status from the laptop server
   e.respondWith(
     fetch(e.request)
