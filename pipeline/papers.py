@@ -16,7 +16,7 @@ import re
 import sys
 import time
 import zipfile
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -160,8 +160,12 @@ def ensure_subject(code, name, comps):
     return entry
 
 
-def from_links(urls, delay=0.5, jobs=None, dry_run=False):
-    """Download, build and pack the papers behind PapaCambridge links. Returns the subject codes built."""
+def from_links(urls, delay=0.5, jobs=None, dry_run=False, builder=None):
+    """Download, build and pack the papers behind PapaCambridge links. Returns the subject codes built.
+
+    With builder (an executor), each subject's build + pack is submitted to it instead of run inline,
+    so the next subject can download meanwhile; the codes are then returned as futures' keys.
+    """
     built = []
     found, names = resolve_links(urls, delay)
     if not found:
@@ -186,10 +190,18 @@ def from_links(urls, delay=0.5, jobs=None, dry_run=False):
         if len(ok) < len(wanted):
             print(f"  ! {len(wanted) - len(ok)} papers couldn't be downloaded", flush=True)
         if ok:
-            build(code, ok, jobs)
-            pack(code)
-            built.append(code)
+            if builder:
+                built.append(builder.submit(build_and_pack, code, ok, jobs))
+            else:
+                build_and_pack(code, ok, jobs)
+                built.append(code)
     return built
+
+
+def build_and_pack(code, stems, jobs=None):
+    build(code, stems, jobs)
+    pack(code)
+    return code
 
 
 def subject_page(code):
@@ -204,11 +216,15 @@ def subject_page(code):
 def add(targets, delay=0.5, jobs=None):
     """Bring subjects up to date from PapaCambridge: each target is a syllabus code (whole subject,
     2018 onwards) or any PapaCambridge link (paper, session or subject page). Prints a check per subject."""
-    codes = []
-    for t in targets:
-        url = subject_page(t) if re.fullmatch(r"\d{4}", t) else t
-        print(f"== {t}" + (f"  ({url})" if url != t else ""), flush=True)
-        codes += from_links([url], delay, jobs)
+    # downloading is network-bound and kept slow on purpose; building is CPU-bound and parallel.
+    # One background builder lets subject N build while subject N+1 downloads.
+    with ThreadPoolExecutor(max_workers=1) as builder:
+        pending = []
+        for t in targets:
+            url = subject_page(t) if re.fullmatch(r"\d{4}", t) else t
+            print(f"== {t}" + (f"  ({url})" if url != t else ""), flush=True)
+            pending += from_links([url], delay, jobs, builder=builder)
+        codes = [f.result() for f in pending]
     problems = sum(check(c) for c in dict.fromkeys(codes))
     return problems
 
