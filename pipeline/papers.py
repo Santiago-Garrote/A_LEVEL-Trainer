@@ -72,7 +72,7 @@ def download(s, stem, out, delay, remember_missing=False):
     """Fetch one PDF into out/. With remember_missing, a 404 leaves a marker so it isn't asked for again
     (used for inserts, which most papers don't have)."""
     path, missing = out / f"{stem}.pdf", out / f"{stem}.missing"
-    if path.exists():
+    if path.exists() and path.stat().st_size > 0:  # an empty file is a download that was cut off
         return True
     if remember_missing and missing.exists():
         return False
@@ -86,7 +86,9 @@ def download(s, stem, out, delay, remember_missing=False):
         if remember_missing and r.status_code in (200, 404):
             missing.touch()
         return False
-    path.write_bytes(r.content)
+    tmp = path.with_suffix(".part")  # write then rename, so an interrupted run never leaves a half file
+    tmp.write_bytes(r.content)
+    tmp.replace(path)
     print(f"  + {stem}", flush=True)
     return True
 
@@ -238,7 +240,9 @@ def check(code):
         by.setdefault(q["paper"], []).append(q)
     built_from = sorted(p.stem.replace("_qp", "") for p in raw.glob(f"{code}_*_qp_*.pdf")
                         if PAPER_RE.match(p.stem).group(4) in SUBJECTS[code]["components"])
-    bad = [f"{p}: no questions found" for p in built_from if p not in by]
+    ms_of = lambda p: raw / f"{p[:p.rindex('_')]}_ms{p[p.rindex('_'):]}.pdf"  # 9483_s24_11 -> 9483_s24_ms_11.pdf
+    no_ms = [p for p in built_from if p not in by and not ms_of(p).exists()]
+    bad = [f"{p}: no questions found" for p in built_from if p not in by and p not in no_ms]
     for paper, ps in sorted(by.items()):
         issues = []
         nums = [q["number"] for q in ps]
@@ -258,6 +262,7 @@ def check(code):
     print(f"\n{code} {SUBJECTS[code]['name']}: {len(by)} papers, {len(qs)} questions"
           + (f", {years[0]}–{years[-1]}" if years else "")
           + f", {sum(1 for q in qs if q.get('insert'))} with insert, {sum(1 for q in qs if not q['topics'])} without topic"
+          + (f"\n  skipped (no mark scheme published): {', '.join(no_ms)}" if no_ms else "")
           + (f"\n  {len(bad)} papers need a look:" if bad else "\n  all papers OK"))
     for b in bad:
         print("  - " + b)
