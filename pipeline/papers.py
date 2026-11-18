@@ -175,9 +175,11 @@ def from_links(urls, delay=0.5, jobs=None, dry_run=False, builder=None):
     for code, stems in sorted(found.items()):
         comps = {int(PAPER_RE.match(st).group(4)) for st in stems}
         meta = SUBJECTS.get(code) or {"components": {str(c): "" for c in comps}}
-        wanted = sorted(st for st in stems if PAPER_RE.match(st).group(4) in meta["components"])
+        since = meta.get("since", MIN_YEAR)
+        wanted = sorted(st for st in stems if PAPER_RE.match(st).group(4) in meta["components"]
+                        and 2000 + int(PAPER_RE.match(st).group(3)) >= since)
         skipped = len(stems) - len(wanted)
-        print(f"{code}: {len(wanted)} question papers" + (f" ({skipped} skipped: components not configured)" if skipped else ""), flush=True)
+        print(f"{code}: {len(wanted)} question papers" + (f" ({skipped} skipped: components not configured, or before {since})" if skipped else ""), flush=True)
         if dry_run:
             print("  " + " ".join(wanted))
             continue
@@ -238,8 +240,10 @@ def check(code):
     by = {}
     for q in qs:
         by.setdefault(q["paper"], []).append(q)
+    since = SUBJECTS[code].get("since", MIN_YEAR)
     built_from = sorted(p.stem.replace("_qp", "") for p in raw.glob(f"{code}_*_qp_*.pdf")
-                        if PAPER_RE.match(p.stem).group(4) in SUBJECTS[code]["components"])
+                        if PAPER_RE.match(p.stem).group(4) in SUBJECTS[code]["components"]
+                        and 2000 + int(PAPER_RE.match(p.stem).group(3)) >= since)
     ms_of = lambda p: raw / f"{p[:p.rindex('_')]}_ms{p[p.rindex('_'):]}.pdf"  # 9483_s24_11 -> 9483_s24_ms_11.pdf
     no_ms = [p for p in built_from if p not in by and not ms_of(p).exists()]
     bad = [f"{p}: no questions found" for p in built_from if p not in by and p not in no_ms]
@@ -322,9 +326,26 @@ def question_starts(doc, need_bold=True, max_skip=0):
         tolerant = question_starts(doc, need_bold, max_skip=8)
         if len(tolerant) > len(starts) * 1.5:  # strict pass stopped at a gap
             return tolerant
-    if not starts:
-        return heading_starts(doc)
+    if not starts and not max_skip:
+        starts = heading_starts(doc) or picture_pages(doc, question_starts(doc, need_bold, max_skip=8))
     return starts
+
+
+def picture_pages(doc, starts):
+    """Fill single missing question numbers printed as pictures (pages with no text layer): when
+    question n is missing and a text-less image page sits where it should be, that page is question n."""
+    if not starts:
+        return starts
+    pic = lambda pno: not doc[pno].get_text().strip() and doc[pno].get_images()
+    out, prev_num, prev_page = [], 0, 0
+    for num, pno, y in starts:
+        if num == prev_num + 2:
+            pics = [p for p in range(prev_page + 1, pno + 1) if p < len(doc) and pic(p)]
+            if pics:
+                out.append((num - 1, pics[0], 40.0))
+        out.append((num, pno, y))
+        prev_num, prev_page = num, pno
+    return out
 
 
 def heading_starts(doc):
@@ -411,6 +432,13 @@ def mcq_answers(ms):
         for m in re.finditer(r"^\s*(\d{1,2})\s+([A-D])\s+1\s*$", page.get_text(), re.M):
             keys[int(m.group(1))] = m.group(2)
     return keys
+
+
+def discounted(ms):
+    """Questions Cambridge cancelled after the exam ("Question discounted", "removed from the question paper")."""
+    text = "".join(page.get_text() for page in ms)
+    return {int(m.group(1)) for m in re.finditer(
+        r"(?m)^\s*(\d{1,2})\s*\n\s*(?:Question discounted|Due to an issue with question)", text, re.I)}
 
 
 LABEL_RE = re.compile(r"^[.,Q]?(\d{1,2})(\([a-z]+\))*$")
@@ -615,8 +643,9 @@ def build_paper(code, qp_path, ms_path, img_dir):
     grid = render_pages(ms, guide_pages(ms), img_dir, f"{paper_id}_grid") if ms and not is_mcq else []
 
     questions = []
+    cancelled = discounted(ms) if ms and is_mcq else set()
     for num, parts in regions.items():
-        if not parts:
+        if not parts or num in cancelled:
             continue
         qid = f"{paper_id}_q{num:02d}"
         text = render(qp, parts, img_dir / f"{qid}.webp")
@@ -672,13 +701,30 @@ def build(code, only=None, jobs=None):
         questions = [q for q in kept if q["paper"] not in rebuilt]
     else:
         questions = []
+    # a subject can start later than 2018 (e.g. a syllabus change): drop older papers
+    since = subject(code).get("since", MIN_YEAR)
+    papers = [p for p in papers if 2000 + int(PAPER_RE.match(p.stem).group(3)) >= since]
+    questions = [q for q in questions if q["year"] >= since]
     # papers are independent, so render them in parallel (one process per core by default)
     with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
         for qs in pool.map(build_one, [code] * len(papers), papers, [img_dir] * len(papers)):
             questions += qs
+    fill_marks(questions)
     questions.sort(key=lambda q: q["id"])
     index.write_text(json.dumps(questions, indent=1))
     print(f"{len(questions)} questions -> {out / 'questions.json'}")
+
+
+def fill_marks(questions):
+    """Marks missing because a paper states them only on a cover with no text layer: use what the
+    same question number of the same component is worth in the subject's other papers."""
+    seen = {}
+    for q in questions:
+        if q["marks"]:
+            seen.setdefault((q["component"], q["number"]), []).append(q["marks"])
+    for q in questions:
+        if not q["marks"] and (marks := seen.get((q["component"], q["number"]))):
+            q["marks"] = max(set(marks), key=marks.count)
 
 
 def pack(code):

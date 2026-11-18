@@ -106,6 +106,7 @@
   },
   "8695": {
     "name": "English Language & Literature",
+    "since": 2021,
     "components": {"1": "Paper 1 · Reading (AS)", "2": "Paper 2 · Writing (AS)"},
     "topics": []
   },
