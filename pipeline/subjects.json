@@ -67,5 +67,61 @@
       {"id": "s2-sampling", "name": "Sampling & estimation", "components": [6], "keywords": ["confidence interval", "unbiased estimate", "sample mean", "random sample", "sampling"]},
       {"id": "s2-hypothesis", "name": "Hypothesis tests", "components": [6], "keywords": ["hypothesis", "significance level", "Type I", "Type II", "test", "null"]}
     ]
+  },
+  "9708": {
+    "name": "Economics",
+    "components": {"1": "Paper 1 · Multiple Choice (AS)", "2": "Paper 2 · Data Response & Essays (AS)"},
+    "topics": [
+      {"id": "econ-basics", "name": "Scarcity, choice & PPC", "components": [1, 2], "keywords": ["scarcity", "opportunity cost", "production possibility", "PPC", "factors of production", "economic problem", "specialisation", "division of labour", "ceteris paribus", "positive statement", "normative"]},
+      {"id": "econ-systems", "name": "Economic systems & types of goods", "components": [1, 2], "keywords": ["planned economy", "market economy", "mixed economy", "economic system", "public good", "merit good", "demerit good", "private good", "free rider", "non-rival", "non-excludable", "information failure"]},
+      {"id": "econ-demand-supply", "name": "Demand, supply & equilibrium", "components": [1, 2], "keywords": ["demand curve", "supply curve", "equilibrium", "excess demand", "excess supply", "shift", "consumer surplus", "producer surplus", "price mechanism", "rationing", "joint demand", "derived demand"]},
+      {"id": "econ-elasticity", "name": "Elasticities", "components": [1, 2], "keywords": ["elasticity", "PED", "YED", "XED", "PES", "price elastic", "price inelastic", "income elasticity", "cross elasticity", "elastic", "inelastic"]},
+      {"id": "econ-gov-micro", "name": "Government microeconomic intervention", "components": [1, 2], "keywords": ["maximum price", "minimum price", "price ceiling", "price floor", "indirect tax", "subsidy", "subsidies", "incidence", "externalit", "regulation", "buffer stock", "direct provision", "nationalisation", "privatisation"]},
+      {"id": "econ-macro-measures", "name": "National income, inflation & employment", "components": [1, 2], "keywords": ["GDP", "national income", "inflation", "deflation", "consumer price index", "CPI", "unemployment", "employment", "price index", "real income", "nominal", "living standards"]},
+      {"id": "econ-ad-as", "name": "Aggregate demand & supply", "components": [1, 2], "keywords": ["aggregate demand", "aggregate supply", "AD", "AS curve", "multiplier", "consumption", "investment", "output gap", "price level", "macroeconomic equilibrium"]},
+      {"id": "econ-macro-policy", "name": "Fiscal, monetary & supply-side policy", "components": [1, 2], "keywords": ["fiscal policy", "monetary policy", "supply-side", "interest rate", "money supply", "budget deficit", "government spending", "taxation", "quantitative easing", "central bank", "macroeconomic objective"]},
+      {"id": "econ-trade", "name": "International trade & protectionism", "components": [1, 2], "keywords": ["comparative advantage", "absolute advantage", "free trade", "protectionism", "tariff", "quota", "terms of trade", "trading bloc", "free trade area", "customs union", "embargo", "dumping", "import", "export"]},
+      {"id": "econ-exchange-bop", "name": "Exchange rates & balance of payments", "components": [1, 2], "keywords": ["exchange rate", "appreciation", "depreciation", "devaluation", "revaluation", "floating", "fixed exchange", "balance of payments", "current account", "financial account", "trade deficit", "current account deficit"]}
+    ]
+  },
+  "9609": {
+    "name": "Business",
+    "components": {"1": "Paper 1 · Short Answer & Essay (AS)", "2": "Paper 2 · Data Response (AS)"},
+    "topics": [
+      {"id": "bus-enterprise", "name": "Enterprise & business structure", "components": [1, 2], "keywords": ["enterprise", "entrepreneur", "sole trader", "partnership", "private limited", "public limited", "social enterprise", "private sector", "public sector", "franchise", "business objective", "stakeholder", "added value", "unlimited liability", "limited liability"]},
+      {"id": "bus-size-growth", "name": "Size of business & growth", "components": [1, 2], "keywords": ["small business", "business size", "internal growth", "external growth", "merger", "takeover", "integration", "economies of scale", "diseconomies"]},
+      {"id": "bus-environment", "name": "External influences", "components": [1, 2], "keywords": ["external influence", "legal", "social", "technological", "environmental", "PEST", "interest rate", "exchange rate", "inflation", "economic growth", "unemployment", "government policy"]},
+      {"id": "bus-hrm", "name": "Human resource management", "components": [1, 2], "keywords": ["human resource", "HRM", "recruitment", "selection", "training", "workforce planning", "dismissal", "redundancy", "labour turnover", "absenteeism", "appraisal", "trade union", "employee"]},
+      {"id": "bus-motivation", "name": "Motivation & management", "components": [1, 2], "keywords": ["motivation", "motivate", "Maslow", "Herzberg", "Taylor", "Mayo", "McClelland", "Vroom", "leadership", "autocratic", "democratic", "laissez-faire", "management", "manager", "empowerment", "job enrichment"]},
+      {"id": "bus-marketing", "name": "Marketing & market research", "components": [1, 2], "keywords": ["marketing", "market research", "primary research", "secondary research", "market segment", "segmentation", "target market", "market share", "market size", "mass market", "niche", "sampling", "customer"]},
+      {"id": "bus-marketing-mix", "name": "Marketing mix", "components": [1, 2], "keywords": ["marketing mix", "product life cycle", "pricing", "price skimming", "penetration pricing", "promotion", "advertising", "branding", "distribution", "place", "4Ps", "7Ps", "extension strategy"]},
+      {"id": "bus-operations", "name": "Operations & quality", "components": [1, 2], "keywords": ["operations", "production", "job production", "batch", "flow production", "productivity", "capacity", "capacity utilisation", "inventory", "stock", "lean", "just-in-time", "JIT", "quality", "TQM", "quality control", "quality assurance", "location", "outsourcing"]},
+      {"id": "bus-finance", "name": "Finance & accounting", "components": [1, 2], "keywords": ["finance", "source of finance", "loan", "overdraft", "share capital", "retained profit", "cash flow", "break-even", "break even", "contribution", "costs", "fixed cost", "variable cost", "budget", "variance", "profit", "revenue", "working capital", "income statement", "statement of financial position", "ratio"]}
+    ]
+  },
+  "9239": {
+    "name": "Global Perspectives & Research",
+    "components": {"1": "Paper 1 · Written Exam (AS)"},
+    "topics": []
+  },
+  "8695": {
+    "name": "English Language & Literature",
+    "components": {"1": "Paper 1 · Reading (AS)", "2": "Paper 2 · Writing (AS)"},
+    "topics": []
+  },
+  "9844": {
+    "name": "Spanish Language & Literature",
+    "components": {"1": "Paper 1", "2": "Paper 2", "3": "Paper 3"},
+    "topics": []
+  },
+  "8021": {
+    "name": "English General Paper",
+    "components": {"1": "Paper 1 · Essay (AS)", "2": "Paper 2 · Comprehension (AS)"},
+    "topics": []
+  },
+  "9483": {
+    "name": "Music",
+    "components": {"1": "Paper 1 · Listening (AS)"},
+    "topics": []
   }
 }

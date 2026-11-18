@@ -102,9 +102,17 @@ export async function mark(q, answerText, photos = []) {
     image(qImg),
     text(`Extracted question text (may have formatting errors; trust the image):\n${q.text}`),
   ];
+  for (const [i, n] of (q.insert ?? []).entries()) {
+    const blob = await db.get("images", n);
+    if (blob) content.push(text(`INSERT (source material the question refers to), page ${i + 1}:`), image(await blobToDataURL(blob)));
+  }
   if (msBlob) {
     content.push(text("OFFICIAL MARK SCHEME for this question:"), image(await blobToDataURL(msBlob)));
     if (q.msText) content.push(text(`Extracted mark scheme text:\n${q.msText}`));
+    for (const [i, n] of (q.grid ?? []).entries()) {
+      const blob = await db.get("images", n);
+      if (blob) content.push(text(`LEVEL DESCRIPTORS / MARKING GRID from the same mark scheme (use them where the mark scheme refers to levels or tables), page ${i + 1}:`), image(await blobToDataURL(blob)));
+    }
   } else {
     content.push(text("No mark scheme is available: mark as an expert examiner would, and say so in the feedback."));
   }

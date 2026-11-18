@@ -23,13 +23,7 @@
             type = "app";
             program = "${pkgs.writeShellScript name text}";
           };
-        in {
-          # nix run .#papers -- all 9702
-          papers = script "papers" ''exec ${python pkgs}/bin/python3 pipeline/papers.py "$@"'';
-          # nix run .#serve   (http://localhost:8000 with packs at /packs/, add --bind 0.0.0.0 for LAN)
-          serve = script "serve" ''exec ${python pkgs}/bin/python3 pipeline/serve.py "$@"'';
-          # nix run .#publish   upload data/packs to the "packs" release of A_LEVEL-Packs and redeploy its Pages site
-          publish = script "publish" ''
+          publishScript = ''
             set -euo pipefail
             export PATH=${pkgs.lib.makeBinPath [ pkgs.gh pkgs.coreutils ]}:$PATH
             repo=''${PACKS_REPO:-Santiago-Garrote/A_LEVEL-Packs}
@@ -52,6 +46,29 @@
             done <<<"$remote"
             gh workflow run pages.yml --repo "$repo"
             echo "Deploying: https://github.com/$repo/actions (live in about a minute)"
+          '';
+        in {
+          # nix run .#papers -- all 9702
+          papers = script "papers" ''exec ${python pkgs}/bin/python3 pipeline/papers.py "$@"'';
+          # nix run .#serve   (http://localhost:8000 with packs at /packs/, add --bind 0.0.0.0 for LAN)
+          serve = script "serve" ''exec ${python pkgs}/bin/python3 pipeline/serve.py "$@"'';
+          # nix run .#publish   upload data/packs to the "packs" release of A_LEVEL-Packs and redeploy its Pages site
+          publish = script "publish" publishScript;
+          # nix run .#add -- 9708 [https://pastpapers.papacambridge.com/...] [--no-publish]
+          # download + build + check + pack each subject (code = whole subject from 2018), then publish
+          add = script "add" ''
+            set -euo pipefail
+            publish=1 args=()
+            for a in "$@"; do [ "$a" = --no-publish ] && publish=0 || args+=("$a"); done
+            if [ ''${#args[@]} -eq 0 ]; then
+              echo "usage: nix run .#add -- <code or PapaCambridge link>... [--no-publish]"; exit 2
+            fi
+            ${python pkgs}/bin/python3 pipeline/papers.py add "''${args[@]}"
+            if [ $publish = 1 ]; then
+              ${pkgs.writeShellScript "publish" publishScript}
+            else
+              echo "Not published (--no-publish). Run: nix run .#publish"
+            fi
           '';
           # nix run .#test
           test = script "test" ''

@@ -63,14 +63,19 @@ def fetch(code, years, components, delay):
                     if not download(s, qp, out, delay):
                         continue
                     download(s, ms, out, delay)
+                    download(s, stem % "in", out, delay, remember_missing=True)  # source booklet, if any
                     got += 1
     print(f"{got} question papers available in {out}")
 
 
-def download(s, stem, out, delay):
-    path = out / f"{stem}.pdf"
+def download(s, stem, out, delay, remember_missing=False):
+    """Fetch one PDF into out/. With remember_missing, a 404 leaves a marker so it isn't asked for again
+    (used for inserts, which most papers don't have)."""
+    path, missing = out / f"{stem}.pdf", out / f"{stem}.missing"
     if path.exists():
         return True
+    if remember_missing and missing.exists():
+        return False
     try:
         r = s.get(BASE_URL + stem + ".pdf", timeout=60)
     except requests.RequestException as e:
@@ -78,6 +83,8 @@ def download(s, stem, out, delay):
         return False
     time.sleep(delay)
     if r.status_code != 200 or not r.content.startswith(b"%PDF"):
+        if remember_missing and r.status_code in (200, 404):
+            missing.touch()
         return False
     path.write_bytes(r.content)
     print(f"  + {stem}", flush=True)
@@ -88,8 +95,9 @@ def download(s, stem, out, delay):
 
 PAPA_HOSTS = {"pastpapers.papacambridge.com", "papacambridge.com", "www.papacambridge.com"}
 STEM_RE = re.compile(r"(\d{4})_([msw])(\d{2})_(?:qp|ms)_(\d)(\d)\.pdf")
-SLUG_RE = re.compile(r"as-and-a-level-([a-z-]+?)-(\d{4})(?:-(\d{4}))?(?:-[a-z-]+)?/?$")
-SESSION_LINK_RE = re.compile(r'href="([^"]*?as-and-a-level-[a-z-]+-\d{4}-(\d{4})-[a-z-]+)"')
+SLUG_RE = re.compile(r"as-and-a-level-([a-z-]+?)-?(\d{4})(?:-(\d{4}))?(?:-[a-z-]+)?/?$")
+SESSION_LINK_RE = re.compile(r'href="([^"]*?as-and-a-level-[a-z-]+-?\d{4}-(\d{4})-[a-z-]+)"')
+SUBJECT_LIST_URL = "https://pastpapers.papacambridge.com/papers/caie/as-and-a-level"
 MIN_YEAR = 2018  # the splitter is checked against the 2018+ layout
 
 
@@ -153,7 +161,8 @@ def ensure_subject(code, name, comps):
 
 
 def from_links(urls, delay=0.5, jobs=None, dry_run=False):
-    """Download, build and pack the papers behind PapaCambridge links."""
+    """Download, build and pack the papers behind PapaCambridge links. Returns the subject codes built."""
+    built = []
     found, names = resolve_links(urls, delay)
     if not found:
         sys.exit("No question papers found behind those links")
@@ -172,11 +181,71 @@ def from_links(urls, delay=0.5, jobs=None, dry_run=False):
         s = requests.Session()
         s.headers["User-Agent"] = "Mozilla/5.0 (A-Level Trainer personal study)"
         ok = [st for st in wanted if download(s, st, out, delay) and download(s, st.replace("_qp_", "_ms_"), out, delay)]
+        for st in ok:
+            download(s, st.replace("_qp_", "_in_"), out, delay, remember_missing=True)
         if len(ok) < len(wanted):
             print(f"  ! {len(wanted) - len(ok)} papers couldn't be downloaded", flush=True)
         if ok:
             build(code, ok, jobs)
             pack(code)
+            built.append(code)
+    return built
+
+
+def subject_page(code):
+    """PapaCambridge subject page for a syllabus code, e.g. 9708 -> .../as-and-a-level-economics-9708."""
+    html = requests.get(SUBJECT_LIST_URL, headers={"User-Agent": "Mozilla/5.0 (A-Level Trainer personal study)"}, timeout=60).text
+    m = re.search(rf'href="[^"]*?(as-and-a-level-[a-z-]*?-?{code})"', html)
+    if not m:
+        sys.exit(f"{code}: no AS & A Level subject with that code on PapaCambridge")
+    return f"https://pastpapers.papacambridge.com/papers/caie/{m.group(1)}"
+
+
+def add(targets, delay=0.5, jobs=None):
+    """Bring subjects up to date from PapaCambridge: each target is a syllabus code (whole subject,
+    2018 onwards) or any PapaCambridge link (paper, session or subject page). Prints a check per subject."""
+    codes = []
+    for t in targets:
+        url = subject_page(t) if re.fullmatch(r"\d{4}", t) else t
+        print(f"== {t}" + (f"  ({url})" if url != t else ""), flush=True)
+        codes += from_links([url], delay, jobs)
+    problems = sum(check(c) for c in dict.fromkeys(codes))
+    return problems
+
+
+def check(code):
+    """Sanity report for a built subject; returns the number of papers with problems."""
+    qs = json.loads((DATA / "build" / code / "questions.json").read_text())
+    raw = DATA / "raw" / code
+    by = {}
+    for q in qs:
+        by.setdefault(q["paper"], []).append(q)
+    built_from = sorted(p.stem.replace("_qp", "") for p in raw.glob(f"{code}_*_qp_*.pdf")
+                        if PAPER_RE.match(p.stem).group(4) in SUBJECTS[code]["components"])
+    bad = [f"{p}: no questions found" for p in built_from if p not in by]
+    for paper, ps in sorted(by.items()):
+        issues = []
+        nums = [q["number"] for q in ps]
+        if nums != sorted(set(nums)) or nums[0] != 1:
+            issues.append("question numbers out of sequence")
+        if ps[0]["type"] == "mcq":
+            if any(not q.get("answer") for q in ps):
+                issues.append("missing answers")
+        else:
+            if any(not q["marks"] for q in ps):
+                issues.append(f"no marks for Q{','.join(str(q['number']) for q in ps if not q['marks'])}")
+            if any(not q.get("msImage") and not q.get("grid") for q in ps):
+                issues.append("no mark scheme for Q" + ",".join(str(q["number"]) for q in ps if not q.get("msImage") and not q.get("grid")))
+        if issues:
+            bad.append(f"{paper}: {'; '.join(issues)}")
+    years = sorted({q["year"] for q in qs})
+    print(f"\n{code} {SUBJECTS[code]['name']}: {len(by)} papers, {len(qs)} questions"
+          + (f", {years[0]}–{years[-1]}" if years else "")
+          + f", {sum(1 for q in qs if q.get('insert'))} with insert, {sum(1 for q in qs if not q['topics'])} without topic"
+          + (f"\n  {len(bad)} papers need a look:" if bad else "\n  all papers OK"))
+    for b in bad:
+        print("  - " + b)
+    return len(bad)
 
 
 # ---------------------------------------------------------------- question papers
@@ -204,11 +273,13 @@ def is_end_page(page):
     return any(m in text for m in END_MARKERS) and len(words.strip()) < 600
 
 
-def question_starts(doc, need_bold=True):
+def question_starts(doc, need_bold=True, max_skip=0):
     """Question numbers in the left margin, in sequence 1, 2, 3, ...
 
     Normally bold; some papers (e.g. Oct/Nov 2024) use obfuscated fonts with no bold
     flag, so if nothing is found we retry with a tighter position check instead.
+    Some numbers can be missing from the margin (e.g. gap-fill items 7–12 inside a passage):
+    if the strict pass stops early, retry allowing jumps of up to 8.
     """
     starts, expected = [], 1
     for pno, page in enumerate(doc):
@@ -220,11 +291,31 @@ def question_starts(doc, need_bold=True):
             m = re.match(r"^(\d{1,2})(\s|$)", s["text"].strip())
             bold = "Bold" in s["font"] or s["flags"] & 16
             in_margin = s["bbox"][0] < (70 if need_bold else 58) and s["bbox"][0] > 40
-            if m and (bold or not need_bold) and in_margin and int(m.group(1)) == expected:
-                starts.append((expected, pno, s["bbox"][1]))
-                expected += 1
+            if m and (bold or not need_bold) and in_margin and expected <= int(m.group(1)) <= expected + max_skip:
+                num = int(m.group(1))
+                starts.append((num, pno, s["bbox"][1]))
+                expected = num + 1
     if not starts and need_bold:
         return question_starts(doc, need_bold=False)
+    if starts and not max_skip:
+        tolerant = question_starts(doc, need_bold, max_skip=8)
+        if len(tolerant) > len(starts) * 1.5:  # strict pass stopped at a gap
+            return tolerant
+    if not starts:
+        return heading_starts(doc)
+    return starts
+
+
+def heading_starts(doc):
+    """Questions headed by a line "Question 1", "Question 2", ... (some essay papers, e.g. 8695)."""
+    starts, expected = [], 1
+    for pno, page in enumerate(doc):
+        for b in page.get_text("dict")["blocks"]:
+            for l in b.get("lines", []):
+                text = "".join(sp["text"] for sp in l["spans"]).strip()
+                if re.fullmatch(rf"Question {expected}", text):
+                    starts.append((expected, pno, l["bbox"][1]))
+                    expected += 1
     return starts
 
 
@@ -392,6 +483,75 @@ def render(doc, parts, path, gap=10):
     return "\n".join(texts).strip()
 
 
+def content_box(page, top=0.0, bottom=None):
+    """Bounding box (display coords) of text and drawings on a page, between top and bottom."""
+    mtx = page.rotation_matrix
+    bottom = page.rect.height if bottom is None else bottom
+    rects = [fitz.Rect(w[:4]) * mtx for w in page.get_text("words")]
+    rects += [d["rect"] * mtx for d in page.get_drawings()]
+    rects += [fitz.Rect(i["bbox"]) * mtx for i in page.get_image_info()]
+    box = fitz.Rect()
+    for r in rects:
+        if r.y0 >= top and r.y1 <= bottom and r.width < page.rect.width * 0.98:
+            box |= r
+    return box
+
+
+def render_pages(doc, pnos, img_dir, prefix):
+    """Render whole pages (minus running header/footer) one image each; returns the image names."""
+    names = []
+    for pno in pnos:
+        page = doc[pno]
+        top, bottom = page_bounds(page) if page.rotation == 0 else (40, page.rect.height - 30)
+        footer = [r.y0 for r in (fitz.Rect(w[:4]) * page.rotation_matrix for w in page.get_text("words"))
+                  if r.y0 > page.rect.height * 0.85]
+        bottom = min([bottom] + [y - 3 for y in footer])
+        box = content_box(page, top, bottom)
+        if box.is_empty or box.height < 20:
+            continue
+        box = fitz.Rect(max(box.x0 - 6, 0), box.y0 - 6, min(box.x1 + 6, page.rect.width), box.y1 + 6)
+        name = f"{prefix}{len(names) + 1}.webp"
+        render(doc, [(pno, box)], img_dir / name)
+        names.append(name)
+    return names
+
+
+def insert_pages(doc):
+    """Pages of an insert (source booklet) worth showing: skip cover, blank and copyright pages."""
+    return [pno for pno, page in enumerate(doc)
+            if not is_end_page(page) and "BLANK PAGE" not in page.get_text()
+            and not (pno == 0 and "INSERT" in page.get_text() and len(page.get_text()) < 900)]
+
+
+GUIDE_RE = re.compile(r"\b[Ll]evels?\b|Table [A-Z]\b|Mark(?:ing)? [Gg]rids?|Quality of Language|Instructions for|[Ee]xaminers")
+ANNOTATIONS_RE = re.compile(r"Annotations?\s+(?:Description|Meaning|Comment)|Annotations for")
+BOILERPLATE_RE = re.compile(r"(Generic Marking|GENERIC MARKING|[\w ]*[-–]Specific Marking|Subject Specific Marking"
+                            r"|\d+\s+(?:Calculation|Annotation)|PREPARATION FOR MARKING|Guidance on using levels)")
+
+
+def guide_pages(ms):
+    """Mark-scheme pages with level descriptors / marking grids that essay questions refer to.
+
+    Skips the cover, the question tables, Cambridge's standard boilerplate and annotation lists,
+    and pages repeated word for word (e.g. the same Quality of Language grid after each question).
+    """
+    pages, seen = [], set()
+    for pno, page in enumerate(ms):
+        if pno == 0:
+            continue
+        body = re.sub(r"^.*?Page \d+ of \d+\s*", "", " ".join(page.get_text().split()))
+        if re.search(r"Question\s+Answer", body) or BOILERPLATE_RE.match(body) or ANNOTATIONS_RE.search(body[:150]):
+            continue
+        continues = pages and pages[-1] == pno - 1  # a grid running onto the next page
+        if not continues and not GUIDE_RE.search(body):
+            continue
+        if body[:400] in seen:
+            continue
+        seen.add(body[:400])
+        pages.append(pno)
+    return pages
+
+
 def tag_topics(code, component, text):
     scores = []
     for t in subject(code).get("topics", []):
@@ -420,9 +580,18 @@ def build_paper(code, qp_path, ms_path, img_dir):
         print(f"  ! {qp_path.stem}: no questions found")
         return []
     regions = question_regions(qp, starts)
+    # essay papers often state marks once on the cover instead of [n] after each question
+    each = re.search(r"Each question is worth (\d+) marks", " ".join(qp[0].get_text().split()))
     answers = mcq_answers(ms) if ms else {}
-    is_mcq = len(answers) >= len(starts) * 0.8
-    msr = ms_regions(ms, len(starts)) if ms and not is_mcq else {}
+    # a real MCQ key has about one letter per question (reading papers can list many lettered items)
+    nums = [num for num, _, _ in starts]
+    is_mcq = len(nums) >= 10 and sum(i in answers for i in nums) >= len(nums) * 0.8 and len(answers) <= max(nums) * 1.25
+    msr = ms_regions(ms, max(nums)) if ms and not is_mcq else {}
+    # shared by every question of the paper: the source booklet and the essay marking grids
+    in_path = qp_path.with_name(qp_path.name.replace("_qp_", "_in_"))
+    insert = render_pages(fitz.open(in_path), insert_pages(fitz.open(in_path)), img_dir, f"{paper_id}_in") if in_path.exists() else []
+    insert_removed = in_path.exists() and any("removed due to copyright" in pg.get_text() for pg in fitz.open(in_path))
+    grid = render_pages(ms, guide_pages(ms), img_dir, f"{paper_id}_grid") if ms and not is_mcq else []
 
     questions = []
     for num, parts in regions.items():
@@ -436,15 +605,23 @@ def build_paper(code, qp_path, ms_path, img_dir):
             "number": num, "image": f"{qid}.webp", "text": text,
             "topics": tag_topics(code, comp, text),
         }
+        if insert:
+            q["insert"] = insert
+            if insert_removed:
+                q["insertRemoved"] = True  # Cambridge blanked some third-party sources in the public copy
+        if grid:
+            q["grid"] = grid
         if is_mcq:
             q.update(type="mcq", marks=1, answer=answers.get(num))
         else:
-            q.update(type="structured", marks=marks_in(text) or None)
+            q.update(type="structured", marks=marks_in(text) or (int(each.group(1)) if each else None))
             if msr.get(num):
                 q["msImage"] = f"{qid}_ms.webp"
                 q["msText"] = render(ms, msr[num], img_dir / q["msImage"], gap=0)
         questions.append(q)
     found = f"{len(answers)} MCQ keys" if is_mcq else f"{len(msr)} mark-scheme sections"
+    found += f", {len(insert)} insert pages" if insert else ""
+    found += f", {len(grid)} grid pages" if grid else ""
     print(f"  {paper_id}: {len(questions)} questions, {found}", flush=True)
     return questions
 
@@ -498,9 +675,9 @@ def pack(code):
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, "w") as z:
         z.writestr("pack.json", json.dumps(manifest), compress_type=zipfile.ZIP_DEFLATED)
-        for q in questions:
-            for name in filter(None, [q["image"], q.get("msImage")]):
-                z.write(out / "img" / name, f"img/{name}", compress_type=zipfile.ZIP_STORED)
+        names = {n for q in questions for n in [q["image"], q.get("msImage"), *q.get("insert", []), *q.get("grid", [])] if n}
+        for name in sorted(names):  # inserts and grids are shared by a paper's questions: store once
+            z.write(out / "img" / name, f"img/{name}", compress_type=zipfile.ZIP_STORED)
     print(f"{dest} ({dest.stat().st_size / 1e6:.1f} MB, {len(questions)} questions)")
     catalog()
 
@@ -541,6 +718,12 @@ def main():
     p = sub.add_parser("pack", help="bundle built questions into data/packs/<code>.zip")
     p.add_argument("code")
     sub.add_parser("catalog", help="rewrite data/packs/index.json from the packs present")
+    ad = sub.add_parser("add", help="bring subjects up to date: codes (whole subject) or PapaCambridge links")
+    ad.add_argument("targets", nargs="+", help="e.g. 9708, or a PapaCambridge paper/session/subject link")
+    ad.add_argument("--delay", type=float, default=0.5)
+    ad.add_argument("--jobs", type=int)
+    ck = sub.add_parser("check", help="report problems in a built subject")
+    ck.add_argument("code")
     lk = sub.add_parser("links", help="download + build + pack the papers behind PapaCambridge links")
     lk.add_argument("urls", nargs="+", help="PDF, session page or subject page links")
     lk.add_argument("--delay", type=float, default=0.5)
@@ -555,6 +738,10 @@ def main():
     args = ap.parse_args()
     if args.cmd == "catalog":
         return catalog()
+    if args.cmd == "add":
+        return add(args.targets, args.delay, args.jobs) and 0  # problems are reported, not fatal
+    if args.cmd == "check":
+        return check(args.code) and 0
     if args.cmd == "links":
         return from_links(args.urls, args.delay, args.jobs, args.dry_run)
 

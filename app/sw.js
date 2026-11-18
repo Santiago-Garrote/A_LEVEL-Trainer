@@ -1,6 +1,6 @@
 // Offline cache for the app shell. Study data lives in IndexedDB, not here.
 // Bump VERSION whenever app files change so clients pick up the new shell.
-const VERSION = "v6";
+const VERSION = "v7";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png",
   "js/app.js", "js/db.js", "js/packs.js", "js/srs.js", "js/ai.js", "vendor/fflate.js",

@@ -63,6 +63,7 @@ export async function importPack(file, onProgress = () => {}) {
 
   const { questions, ...meta } = pack;
   const before = await db.byIndex("questions", "subject", pack.code);
+  const oldImages = new Set(before.flatMap(imagesOf));
   const writes = [];
   for (const q of questions) writes.push(["questions", q]);
   const TYPES = { png: "image/png", webp: "image/webp" };
@@ -81,23 +82,20 @@ export async function importPack(file, onProgress = () => {}) {
   }
 
   // updating: drop questions and images the new build no longer has (progress is kept)
-  const now = new Map(questions.map((q) => [q.id, q]));
-  for (const q of before) {
-    if (!now.has(q.id)) await removeQuestion(q);
-    else for (const img of [q.image, q.msImage]) {
-      if (img && img !== now.get(q.id).image && img !== now.get(q.id).msImage) await db.del("images", img);
-    }
-  }
+  const keepIds = new Set(questions.map((q) => q.id));
+  const keepImages = new Set(questions.flatMap(imagesOf));
+  for (const q of before) if (!keepIds.has(q.id)) await db.del("questions", q.id);
+  for (const img of oldImages) if (!keepImages.has(img)) await db.del("images", img);
   return { code: pack.code, name: pack.name, count: questions.length };
 }
 
-async function removeQuestion(q) {
-  await db.del("questions", q.id);
-  for (const img of [q.image, q.msImage]) if (img) await db.del("images", img);
-}
+/** Every image a question uses; inserts and marking grids are shared by a paper's questions. */
+const imagesOf = (q) => [q.image, q.msImage, ...(q.insert ?? []), ...(q.grid ?? [])].filter(Boolean);
 
 /** Remove a subject's questions and images (progress is kept). */
 export async function deletePack(code) {
-  for (const q of await db.byIndex("questions", "subject", code)) await removeQuestion(q);
+  const qs = await db.byIndex("questions", "subject", code);
+  for (const img of new Set(qs.flatMap(imagesOf))) await db.del("images", img);
+  for (const q of qs) await db.del("questions", q.id);
   await db.del("packs", code);
 }

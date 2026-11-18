@@ -21,6 +21,20 @@ nix run .#test                   # headless end-to-end test (needs packs in data
 
 ## Building packs
 
+The everyday command: give it subject codes or PapaCambridge links, and it downloads, builds, checks, packs and publishes.
+
+```sh
+nix run .#add -- 9708                      # a whole subject (every session from 2018)
+nix run .#add -- 9708 9609 8021            # several at once
+nix run .#add -- https://pastpapers.papacambridge.com/papers/caie/as-and-a-level-economics-9708-2025-may-june
+nix run .#add -- 9708 --no-publish         # build locally only, publish later with: nix run .#publish
+nix run .#papers -- check 9708             # re-print the report for a built subject
+```
+
+It ends with a report per subject: papers, questions, years, and any papers that need a look (no questions found, missing marks or mark schemes). Codes not in `pipeline/subjects.json` are added automatically with a basic entry.
+
+Lower-level commands:
+
 ```sh
 nix run .#papers -- all 9702 --years 2018-2024           # fetch + build + pack
 nix run .#papers -- fetch 9709 --years 2020-2024 --components 1,3
@@ -34,6 +48,7 @@ nix run .#papers -- links --dry-run <url>                  # just list the paper
 - Papers are downloaded from PapaCambridge into `data/raw/<code>/` and cached (re-running only fetches what's new).
 - Default components and syllabus topics per subject live in `pipeline/subjects.json`. Currently that's 9702 Physics and 9709 Mathematics. To add a subject, add an entry with its components and topic keywords. Topic tagging is keyword based; questions with no match show up as "Untagged".
 - `links` accepts PapaCambridge links: a paper PDF (converted with its mark scheme), a session page such as `.../as-and-a-level-physics-9702-2023-may-june`, or a subject page such as `.../as-and-a-level-chemistry-9701` (every session from 2018). A subject that isn't in `subjects.json` gets a basic entry in `data/subjects-local.json` (all components, no topic tags) so it works straight away; add it to `subjects.json` with topic keywords to tag it.
+- Papers with a separate **insert** (source texts, scores) get it attached to every question, shown under *Insert*. Essay mark schemes' **level descriptors / marking grids** are attached too, shown under *Marking grid*. Both are sent to the AI marker.
 - Question detection relies on the CAIE layout (bold question numbers in the left margin; landscape "Question / Answer / Marks" mark-scheme tables, 2018+). Watch the build output for papers reporting 0 questions or missing mark-scheme sections.
 
 ## Using it

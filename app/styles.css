@@ -171,3 +171,6 @@ details.card summary { cursor: pointer; padding: 0.2rem 0; }
 .steps { padding-left: 1.3rem; margin: 0.5rem 0 0; }
 .steps li { margin: 0.7rem 0; line-height: 1.45; }
 .steps .actions { margin-top: 0.5rem; }
+.pages-box { margin-top: 0.75rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.75rem; }
+.pages-box summary { cursor: pointer; font-weight: 600; }
+.pages .qimg { margin-top: 0.5rem; }

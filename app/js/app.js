@@ -502,6 +502,21 @@ async function session() {
 }
 
 /** Question card with answering + marking. onDone({score, max, method}) is called once marked. */
+/** Collapsible set of page images (insert, marking grid), loaded only when opened. */
+function pageImages(title, names, alt) {
+  let loaded = false;
+  const box = h("div.pages");
+  return h("details.pages-box", {
+    ontoggle: async (e) => {
+      if (!e.target.open || loaded) return;
+      loaded = true;
+      for (const [i, n] of names.entries()) {
+        box.append(h("img.qimg", { src: await db.imageURL(n), alt: `${alt} page ${i + 1}`, loading: "lazy", onclick: (ev) => ev.target.classList.toggle("zoom") }));
+      }
+    },
+  }, h("summary", `${title} · ${names.length} page${names.length > 1 ? "s" : ""}`), box);
+}
+
 async function questionView(q, onDone) {
   const card = h("section.card.question");
   const header = h("div.qhead",
@@ -509,6 +524,10 @@ async function questionView(q, onDone) {
     h("div.muted", q.marks ? `${q.marks} mark${q.marks > 1 ? "s" : ""}` : ""));
   const img = h("img.qimg", { src: await db.imageURL(q.image), alt: q.text.slice(0, 300), onclick: (e) => e.target.classList.toggle("zoom") });
   card.append(header, img);
+  if (q.insert?.length) {
+    card.append(pageImages("Insert (source material)", q.insert, "insert"));
+    if (q.insertRemoved) card.append(h("p.muted.small", "Cambridge removed some third-party texts from the public copy of this insert, so parts may be missing."));
+  }
   if (q.topics.length) card.append(h("div.tags", q.topics.map((t) => h("span.tag", t))));
 
   const area = h("div.answer");
@@ -559,7 +578,8 @@ async function structured(q, area, onDone) {
 
   async function showMS() {
     if (!q.msImage) return h("p.muted", "Mark scheme not found for this question, so mark it against your notes or the original PDF.");
-    return h("div", h("h3", "Mark scheme"), h("img.qimg.ms", { src: await db.imageURL(q.msImage), alt: "mark scheme", onclick: (e) => e.target.classList.toggle("zoom") }));
+    return h("div", h("h3", "Mark scheme"), h("img.qimg.ms", { src: await db.imageURL(q.msImage), alt: "mark scheme", onclick: (e) => e.target.classList.toggle("zoom") }),
+      q.grid?.length && pageImages("Marking grid (level descriptors)", q.grid, "marking grid"));
   }
 
   async function selfMark(preset, method = "self") {
